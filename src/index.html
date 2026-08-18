@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slide Builder</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" crossorigin="anonymous" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Slide Builder</div>
+    <div class="actions">
+      <button id="btn-new-slide" title="Add a new slide">+ New Slide</button>
+      <button id="btn-manage-templates" title="Manage slide templates">Templates</button>
+      <button id="btn-save" title="Download the deck as JSON">Save</button>
+      <button id="btn-load" title="Load a deck from JSON">Load</button>
+      <input type="file" id="file-load" accept="application/json" hidden />
+      <button id="btn-publish" title="Export deck as a self-contained HTML file">Publish</button>
+      <button id="btn-present" class="primary" title="Enter presentation mode">Present</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="pane pane-left">
+      <div class="pane-header">Slides</div>
+      <ol id="slide-list" class="slide-list"></ol>
+      <div class="pane-footer">
+        <button id="btn-new-slide-2" class="ghost">+ Add slide</button>
+      </div>
+    </aside>
+
+    <section class="pane pane-center">
+      <div class="stage-wrapper">
+        <div id="stage" class="stage" aria-label="Slide preview"></div>
+      </div>
+    </section>
+
+    <aside class="pane pane-right">
+      <div class="pane-header" id="props-header">Properties</div>
+      <div id="props" class="props"></div>
+    </aside>
+  </main>
+
+  <!-- Template picker modal -->
+  <div id="modal-template-picker" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Choose a slide template</h2>
+        <button class="close" data-close-modal="modal-template-picker">&times;</button>
+      </div>
+      <div id="template-picker-grid" class="template-grid"></div>
+    </div>
+  </div>
+
+  <!-- Templates manager modal -->
+  <div id="modal-templates" class="modal" hidden>
+    <div class="modal-card wide">
+      <div class="modal-header">
+        <h2>Manage templates</h2>
+        <button class="close" data-close-modal="modal-templates">&times;</button>
+      </div>
+      <div class="modal-body two-col">
+        <div class="col">
+          <div class="section-title">Available templates</div>
+          <ul id="templates-list" class="templates-list"></ul>
+          <button id="btn-new-template" class="primary">+ New user template</button>
+        </div>
+        <div class="col">
+          <div class="section-title">Template editor</div>
+          <div id="template-editor" class="template-editor">
+            <p class="hint">Select a user template to edit, or create a new one.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Present overlay -->
+  <div id="present" class="present" hidden>
+    <div id="present-stage" class="present-stage"></div>
+    <div class="present-hud">
+      <button id="present-prev">&larr;</button>
+      <span id="present-count"></span>
+      <button id="present-next">&rarr;</button>
+      <button id="present-exit">Exit</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script src="app.js"></script>
+</body>
+</html>
