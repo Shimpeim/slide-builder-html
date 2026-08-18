@@ -239,16 +239,23 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   padding: 10px 28px;
   font-size: 14px;
   color: #6a7280;
-  display: flex;
   align-items: center;
   min-height: 0;
   white-space: pre-wrap;
 }
-.slide-header { border-bottom: 1px solid #eef1f5; }
-.slide-footer { border-top: 1px solid #eef1f5; }
-.slide-header.align-left, .slide-footer.align-left { justify-content: flex-start; text-align: left; }
-.slide-header.align-center, .slide-footer.align-center { justify-content: center; text-align: center; }
-.slide-header.align-right, .slide-footer.align-right { justify-content: flex-end; text-align: right; }
+.slide-header {
+  display: flex;
+  border-bottom: 1px solid #eef1f5;
+}
+.slide-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  border-top: 1px solid #eef1f5;
+}
+.slide-header.align-left { justify-content: flex-start; text-align: left; }
+.slide-header.align-center { justify-content: center; text-align: center; }
+.slide-header.align-right { justify-content: flex-end; text-align: right; }
 .slide-header.empty, .slide-footer.empty { display: none; }
 .slide-body { position: relative; overflow: hidden; min-height: 0; }
 

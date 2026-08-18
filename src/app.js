@@ -246,16 +246,23 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   padding: 10px 28px;
   font-size: 14px;
   color: #6a7280;
-  display: flex;
   align-items: center;
   min-height: 0;
   white-space: pre-wrap;
 }
-.slide-header { border-bottom: 1px solid #eef1f5; }
-.slide-footer { border-top: 1px solid #eef1f5; }
-.slide-header.align-left, .slide-footer.align-left { justify-content: flex-start; text-align: left; }
-.slide-header.align-center, .slide-footer.align-center { justify-content: center; text-align: center; }
-.slide-header.align-right, .slide-footer.align-right { justify-content: flex-end; text-align: right; }
+.slide-header {
+  display: flex;
+  border-bottom: 1px solid #eef1f5;
+}
+.slide-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  border-top: 1px solid #eef1f5;
+}
+.slide-header.align-left { justify-content: flex-start; text-align: left; }
+.slide-header.align-center { justify-content: center; text-align: center; }
+.slide-header.align-right { justify-content: flex-end; text-align: right; }
 .slide-header.empty, .slide-footer.empty { display: none; }
 .slide-body { position: relative; overflow: hidden; min-height: 0; }
 
@@ -1042,6 +1049,25 @@ function renderChrome(part, page, total) {
   const size = Number(part && part.size) || 14;
   return { text, font, align, size, empty: !text };
 }
+function renderFooter(part, page, total) {
+  const font = (part && part.font) || 'system-ui';
+  const size = Number(part && part.size) || 14;
+  if (part && part.left !== undefined) {
+    const L = part.left ? chromeText(part.left, page, total) : '';
+    const C = part.center ? chromeText(part.center, page, total) : '';
+    const R = part.right ? chromeText(part.right, page, total) : '';
+    return { left: L, center: C, right: R, font, size, empty: !(L || C || R) };
+  }
+  const text = part && part.text ? chromeText(part.text, page, total) : '';
+  const align = (part && part.align) || 'center';
+  return {
+    left: align === 'left' ? text : '',
+    center: align === 'center' ? text : '',
+    right: align === 'right' ? text : '',
+    font, size, empty: !text
+  };
+}
+
 
 function renderOverlays(slide) {
   const overlays = Array.isArray(slide.overlays) ? slide.overlays : [];
@@ -1067,11 +1093,16 @@ function renderSlideHTML(slide, page, total) {
     ? t.render(slide.fields)
     : `<div style="padding:24px;color:#a00">Template not found: ${esc(slide.templateId)}</div>`;
   const h = renderChrome(slide.header, page, total);
-  const f = renderChrome(slide.footer, page, total);
+  const f = renderFooter(slide.footer, page, total);
   // Header: data-md → patchChromeMarkdown() sets innerHTML directly so markdown renders correctly.
-  // Footer: plain escaped text only — links in footers break the flex layout.
   const headerHTML = `<div class="slide-header align-${h.align}${h.empty ? ' empty' : ''}" style="font-family:${esc(h.font)}; font-size:${h.size}px" data-md="${esc(h.text)}"></div>`;
-  const footerHTML = `<div class="slide-footer align-${f.align}${f.empty ? ' empty' : ''}" style="font-family:${esc(f.font)}; font-size:${f.size}px">${esc(f.text)}</div>`;
+  const footerHTML = f.empty
+    ? `<div class="slide-footer empty"></div>`
+    : `<div class="slide-footer" style="font-family:${esc(f.font)};font-size:${f.size}px">` +
+      `<span style="text-align:left">${esc(f.left)}</span>` +
+      `<span style="text-align:center">${esc(f.center)}</span>` +
+      `<span style="text-align:right">${esc(f.right)}</span>` +
+      `</div>`;
   const frameHTML = `<div class="slide-frame">${headerHTML}<div class="slide-body">${body}</div>${footerHTML}</div>`;
   return frameHTML + renderOverlays(slide);
 }
@@ -1434,51 +1465,73 @@ function renderOverlaysEditor(slide) {
 }
 
 function renderChromeEditor(slide) {
-  const ensure = (key) => {
-    if (!slide[key]) slide[key] = { text: '', font: 'system-ui', align: 'center', size: 14 };
-    return slide[key];
-  };
-  const update = (key, prop, val) => {
-    ensure(key);
-    slide[key][prop] = val;
+  // Ensure header
+  if (!slide.header) slide.header = { text: '', font: 'system-ui', align: 'center', size: 14 };
+
+  // Ensure/migrate footer to 3-slot format
+  if (!slide.footer) {
+    slide.footer = { left: '', center: '', right: '', font: 'system-ui', size: 14 };
+  } else if (slide.footer.left === undefined) {
+    const align = slide.footer.align || 'center';
+    const text = slide.footer.text || '';
+    slide.footer.left   = align === 'left'   ? text : '';
+    slide.footer.center = align === 'center' ? text : '';
+    slide.footer.right  = align === 'right'  ? text : '';
+    delete slide.footer.text;
+    delete slide.footer.align;
     saveDeck();
-    renderStage();
+  }
+
+  const updateH = (prop, val) => { slide.header[prop] = val; saveDeck(); renderStage(); };
+  const updateF = (prop, val) => { slide.footer[prop] = val; saveDeck(); renderStage(); };
+
+  const fontSel = (part, onchange) => {
+    const cur = part.font || 'system-ui';
+    return el('select', { onchange },
+      FONTS.map(f => el('option', { value: f, selected: f === cur ? '' : null }, f)));
   };
-  const alignSelect = (key) => {
-    const cur = (slide[key] && slide[key].align) || 'center';
-    return el('select', { onchange: e => update(key, 'align', e.target.value) },
+  const sizeSel = (part, onchange) => el('input', {
+    type: 'number', min: 6, max: 96, step: 1,
+    value: part.size || 14,
+    oninput: e => onchange(Number(e.target.value) || 14)
+  });
+  const alignSel = () => {
+    const cur = slide.header.align || 'center';
+    return el('select', { onchange: e => updateH('align', e.target.value) },
       ['left', 'center', 'right'].map(a =>
         el('option', { value: a, selected: a === cur ? '' : null }, a)));
   };
-  const fontSelect = (key) => {
-    const cur = (slide[key] && slide[key].font) || 'system-ui';
-    return el('select', { onchange: e => update(key, 'font', e.target.value) },
-      FONTS.map(f => el('option', { value: f, selected: f === cur ? '' : null }, f)));
-  };
-  const textInput = (key) => el('textarea', {
-    rows: 2,
-    style: { minHeight: '44px' },
-    placeholder: key === 'footer' ? 'e.g. {page} / {total}  (press Enter for a line break)' : 'press Enter for a line break',
-    oninput: e => update(key, 'text', e.target.value)
-  }, (slide[key] && slide[key].text) || '');
+  const slotArea = (slot, placeholder) => el('textarea', {
+    rows: 2, style: { minHeight: '40px' },
+    placeholder,
+    oninput: e => updateF(slot, e.target.value)
+  }, slide.footer[slot] || '');
 
   const box = el('div');
-  const sizeInput = (key) => el('input', {
-    type: 'number', min: 6, max: 96, step: 1,
-    value: (slide[key] && slide[key].size) || 14,
-    oninput: e => update(key, 'size', Number(e.target.value) || 14)
-  });
 
-  ['header', 'footer'].forEach(key => {
-    const label = key.charAt(0).toUpperCase() + key.slice(1);
-    box.appendChild(el('div', { class: 'group' }, [
-      el('div', { class: 'group-title' }, `${label} (blank = hidden)`),
-      fieldGroup(`${label} text`, textInput(key)),
-      fieldGroup('Font', fontSelect(key)),
-      fieldGroup('Font size (px)', sizeInput(key)),
-      fieldGroup('Alignment', alignSelect(key))
-    ]));
-  });
+  // Header
+  box.appendChild(el('div', { class: 'group' }, [
+    el('div', { class: 'group-title' }, 'Header (blank = hidden)'),
+    fieldGroup('Header text', el('textarea', {
+      rows: 2, style: { minHeight: '44px' },
+      placeholder: 'press Enter for a line break',
+      oninput: e => updateH('text', e.target.value)
+    }, slide.header.text || '')),
+    fieldGroup('Font', fontSel(slide.header, e => updateH('font', e.target.value))),
+    fieldGroup('Font size (px)', sizeSel(slide.header, v => updateH('size', v))),
+    fieldGroup('Alignment', alignSel()),
+  ]));
+
+  // Footer (3-slot)
+  box.appendChild(el('div', { class: 'group' }, [
+    el('div', { class: 'group-title' }, 'Footer (blank = hidden)'),
+    fieldGroup('Left', slotArea('left', '{page} / {total}')),
+    fieldGroup('Center', slotArea('center', '')),
+    fieldGroup('Right', slotArea('right', '')),
+    fieldGroup('Font', fontSel(slide.footer, e => updateF('font', e.target.value))),
+    fieldGroup('Font size (px)', sizeSel(slide.footer, v => updateF('size', v))),
+  ]));
+
   box.appendChild(el('p', { class: 'hint' },
     'Tip: use {page} and {total} in the header or footer to insert the current page number and slide count.'));
   return box;
@@ -1813,6 +1866,7 @@ ${renderMarkdown.toString()}
 ${interpolate.toString()}
 ${chromeText.toString()}
 ${renderChrome.toString()}
+${renderFooter.toString()}
 ${renderOverlays.toString()}
 ${renderSlideHTML.toString()}
 ${patchChromeMarkdown.toString()}
