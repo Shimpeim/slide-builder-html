@@ -241,10 +241,10 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   color: #6a7280;
   align-items: center;
   min-height: 0;
-  white-space: pre-wrap;
 }
 .slide-header {
   display: flex;
+  white-space: pre-wrap;
   border-bottom: 1px solid #eef1f5;
 }
 .slide-footer {
@@ -253,6 +253,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   gap: 4px;
   border-top: 1px solid #eef1f5;
 }
+.slide-footer span { white-space: nowrap; }
 .slide-header.align-left { justify-content: flex-start; text-align: left; }
 .slide-header.align-center { justify-content: center; text-align: center; }
 .slide-header.align-right { justify-content: flex-end; text-align: right; }
