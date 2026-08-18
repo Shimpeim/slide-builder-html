@@ -246,7 +246,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   padding: 10px 28px;
   font-size: 14px;
   color: #6a7280;
-  align-items: center;
+  align-items: flex-start;
   min-height: 0;
 }
 .slide-header {
@@ -255,12 +255,12 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   border-bottom: 1px solid #eef1f5;
 }
 .slide-footer {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   gap: 4px;
   border-top: 1px solid #eef1f5;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
-.slide-footer span { white-space: nowrap; }
 .slide-header.align-left { justify-content: flex-start; text-align: left; }
 .slide-header.align-center { justify-content: center; text-align: center; }
 .slide-header.align-right { justify-content: flex-end; text-align: right; }
@@ -1100,9 +1100,9 @@ function renderSlideHTML(slide, page, total) {
   const footerHTML = f.empty
     ? `<div class="slide-footer empty"></div>`
     : `<div class="slide-footer" style="font-family:${esc(f.font)};font-size:${f.size}px">` +
-      `<span style="text-align:left">${esc(f.left)}</span>` +
-      `<span style="text-align:center">${esc(f.center)}</span>` +
-      `<span style="text-align:right">${esc(f.right)}</span>` +
+      `<span style="text-align:left;flex:0 1 auto;white-space:pre-wrap">${esc(f.left)}</span>` +
+      `<span style="text-align:center;flex:1;min-width:0;white-space:pre-wrap">${esc(f.center)}</span>` +
+      `<span style="text-align:right;flex:0 1 auto;white-space:pre-wrap">${esc(f.right)}</span>` +
       `</div>`;
   const frameHTML = `<div class="slide-frame">${headerHTML}<div class="slide-body">${body}</div>${footerHTML}</div>`;
   return frameHTML + renderOverlays(slide);
