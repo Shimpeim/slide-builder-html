@@ -249,7 +249,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 }
 .slide-footer {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: auto 1fr auto;
   gap: 4px;
   border-top: 1px solid #eef1f5;
 }
