@@ -29,7 +29,19 @@ Four built-ins, each with its own editable schema:
 
 ### Per-slide chrome (Header / Footer)
 
-Every slide has an editable Header strip and Footer strip that wrap the template body regardless of template type. Each strip has independent text, font, font-size, and alignment. Blank text hides the strip. `{page}` and `{total}` tokens expand to the current slide number and total count in both edit and present mode. Text supports multi-line input (the field is a small textarea).
+Every slide has an editable **Header** strip and **Footer** strip that wrap the template body regardless of template type. Blank text hides the strip. `{page}` and `{total}` tokens expand to the current slide number and total count in both edit and present mode.
+
+**Header** — single text area with independent font, font-size, and alignment (left / center / right). Supports markdown.
+
+**Footer** — three independent text slots with shared font and font-size:
+
+| Slot | Position | Typical use |
+|---|---|---|
+| Left | anchored to left edge | `{page} / {total}` |
+| Center | fills remaining space | short title or date |
+| Right | anchored to right edge | footnote or institution |
+
+Each slot wraps only when its content would overflow the slide, not at an arbitrary fraction of the footer width. Slots are independent — leave any blank and it takes no space. Old decks with a single `text + align` footer are migrated to the matching slot automatically when the slide is first opened in the editor.
 
 ### Image overlays
 
@@ -49,6 +61,16 @@ The Images folder is a deck-wide setting; each deck can point at its own directo
 - Drag any row by the `⋮⋮` handle (or the row itself) to reorder — a blue insertion bar shows the drop position
 - `⧉` duplicates the slide (deep clone with fresh ids)
 - `×` deletes; the last remaining slide can't be deleted
+
+### Publish
+
+**Publish** exports the current deck as a fully self-contained HTML file. The published file:
+
+- Requires no app, no server, no internet connection (KaTeX fonts load from CDN, but slides render without them).
+- Embeds all styles inline (the full `styles.css` is compiled into `app.js` as `VIEWER_CSS` so it is always available regardless of how `index.html` is opened — `fetch()` and CSSOM rules access are both blocked by Chrome on `file://` origins).
+- Embeds all built-in and user-defined template code, and the full deck JSON.
+- Supports keyboard navigation (`←` / `→` / `Space` / `PageDown` / `PageUp`) and wikilink clicks.
+- **Linked image overlays** (non-embedded) are not bundled. A warning is shown after export if the deck contains any; those overlays display only when the HTML file is opened from the same directory as the `assets/` folder.
 
 ### Presentation mode
 
@@ -77,10 +99,13 @@ deck = {
 Slide = {
   id, templateId,
   fields: { ... template-specific ... },
-  header?: { text, font, size, align },
-  footer?: { text, font, size, align },
+  header?: { text, font, size, align },      // align: 'left' | 'center' | 'right'
+  footer?: { left, center, right, font, size }, // three independent text slots
   overlays?: [ Overlay, ... ]
 }
+
+// Legacy footer format (still accepted by renderFooter, migrated on first editor open):
+// footer?: { text, font, size, align }
 
 Overlay = {
   id, src,           // src = data: URL | http(s) URL | file:// URL | path
@@ -111,11 +136,12 @@ Export JSON shape: `{ deck, userTemplates, exportedAt, version: 1 }`. Linked ima
 Every slide is rendered by `renderSlideHTML(slide, page, total)`:
 
 1. `template.render(slide.fields)` returns the body HTML.
-2. `renderChrome(slide.header, page, total)` and `renderChrome(slide.footer, page, total)` build header/footer strips, expanding `{page}` and `{total}` tokens.
-3. Frame is assembled as a CSS grid (`auto 1fr auto`) inside `.slide-frame`, `z-index: 1`.
-4. `renderOverlays(slide)` appends each overlay as an absolutely-positioned sibling of the frame inside `.stage`. Each overlay's user-set z-index controls stacking.
+2. `renderChrome(slide.header, page, total)` builds the header strip (single text + alignment), expanding `{page}` and `{total}`.
+3. `renderFooter(slide.footer, page, total)` builds the footer strip. It handles both the new three-slot format (`left`, `center`, `right`) and the legacy single-text format (`text` + `align`), falling back gracefully.
+4. Frame is assembled as a CSS grid (`auto 1fr auto` rows) inside `.slide-frame`, `z-index: 1`.
+5. `renderOverlays(slide)` appends each overlay as an absolutely-positioned sibling of the frame inside `.stage`. Each overlay's user-set z-index controls stacking.
 
-Both the edit stage and Present mode use this same function, so the two are always in sync.
+Both the edit stage, Present mode, and published HTML use this same pipeline, so all three views are always in sync.
 
 ## Extending
 
@@ -156,6 +182,9 @@ Handled in-app via **Templates → + New user template**. No code changes needed
 - **Overlay layering depends on `.slide-frame { z-index: 1 }`.** Overlays are DOM siblings of the frame inside `.stage`; layering only behaves as advertised because the frame has an explicit z-index. Don't remove it.
 - **Never call `renderProps()` on every keystroke.** Rebuilding the panel loses focus on the field being edited. Call it only on structural changes (add/remove overlay, change numPillars, template switch).
 - **Overlay `src`** is a bare string. Anything the `<img>` tag can load works: data URLs, http(s), file://, or a relative/absolute path. Link and Embed just populate that same field differently.
+- **`VIEWER_CSS` in `app.js` must stay in sync with `styles.css`.** The Publish feature embeds the full stylesheet as a string constant (`const VIEWER_CSS`) near the top of `app.js` because `fetch()` and CSSOM rule access are both blocked on `file://` origins in Chrome. Any edit to `styles.css` requires rebuilding this constant. See `CLAUDE.md` for the sync script.
+- **Footer CSS grid → flex.** The footer was changed from `display: grid` to `display: flex` because CSS Grid sizes `auto` tracks to **min-content** (the width of the longest single word) when a `fr` track is present, causing premature text wrapping. Flex with `flex: 0 1 auto` on left/right slots preserves natural content width and wraps only when the total would exceed the slide width.
+- **`function.toString()` for Publish serialisation.** Built-in template functions and rendering helpers are serialised via `.toString()` into the published HTML. Shorthand method syntax (e.g. `render(fields) {}`) does not include the `function` keyword, so a `toFnSrc()` wrapper inside `publishHTML` prepends it where missing. Don't convert these functions to arrow functions — arrow functions are fine for Publish but break the `function` prefix check.
 
 ## Roadmap notes (not implemented)
 
