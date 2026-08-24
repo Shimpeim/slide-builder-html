@@ -573,6 +573,48 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   margin: 0.4em 0;
   overflow-x: auto;
 }
+
+/* Shiny App template */
+.tpl-shiny {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  overflow: hidden;
+}
+.tpl-shiny-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.tpl-shiny--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tpl-shiny-placeholder {
+  color: #aaa;
+  font-size: 16px;
+  font-style: italic;
+}
+.tpl-shiny-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #6a7280;
+  border-top: 1px solid #eef1f5;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.9);
+  z-index: 1;
+}
 `;
 
 const FONTS = [
@@ -941,6 +983,55 @@ const BUILTIN_TEMPLATES = [
         <div>• point one</div><div>• point two</div><div>• point three</div>
       </div>`;
     }
+  },
+  {
+    id: 'shiny',
+    name: 'Shiny App',
+    builtin: true,
+    tag: 'built-in',
+    defaults() {
+      return { url: 'http://127.0.0.1:3838', caption: '', pane: 'ALL' };
+    },
+    render(fields, slide) {
+      const hasHeader = slide && String((slide.header && slide.header.text) || '').trim();
+      if (!hasHeader) {
+        return '<div class="tpl-shiny tpl-shiny--empty"><div class="tpl-shiny-placeholder">Input a HEADER to display the app.</div></div>';
+      }
+      const url = (fields.url || '').trim();
+      if (!url) {
+        return '<div class="tpl-shiny tpl-shiny--empty"><div class="tpl-shiny-placeholder">Set a Shiny app URL in the properties panel.</div></div>';
+      }
+      const pane = (fields.pane || 'ALL').trim();
+      const cap = fields.caption ? `<div class="tpl-shiny-caption">${esc(fields.caption)}</div>` : '';
+      // Published HTML: mountShinyFrame is not defined → embed iframe directly with ?pane=.
+      // Edit/present mode: mountShinyFrame() positions a fixed persistent iframe over
+      // the .slide-body; this shell div is just a white background placeholder.
+      if (typeof mountShinyFrame !== 'function') {
+        const paneLower = pane.toLowerCase();
+        const src = paneLower !== 'all' ? `${url}?pane=${paneLower}` : url;
+        return `<div class="tpl-shiny"><iframe src="${esc(src)}" class="tpl-shiny-frame" allowfullscreen></iframe>${cap}</div>`;
+      }
+      return `<div class="tpl-shiny">${cap}</div>`;
+    },
+    editor(fields, onChange) {
+      const currentPane = fields.pane || 'ALL';
+      const paneSelect = el('select', {
+        id: 'shiny-pane-select',
+        onchange: e => onChange('pane', e.target.value)
+      }, ['ALL', 'LEFT', 'RIGHT'].map(p => el('option', { value: p, selected: p === currentPane ? '' : null }, p)));
+      return el('div', { class: 'group' }, [
+        el('div', { class: 'group-title' }, 'Shiny App'),
+        fieldGroup('App URL', fieldInput({ name: 'url', type: 'text' }, fields.url, onChange)),
+        fieldGroup('Pane', paneSelect),
+        fieldGroup('Caption (optional)', fieldInput({ name: 'caption', type: 'text' }, fields.caption, onChange))
+      ]);
+    },
+    thumb() {
+      return `<div style="display:flex;flex-direction:column;height:100%;padding:4px;gap:3px">
+        <div style="font-size:9px;font-weight:600;color:#333">Shiny App</div>
+        <div style="flex:1;background:#e8ecf5;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#666">[ iframe ]</div>
+      </div>`;
+    }
   }
 ];
 
@@ -984,6 +1075,69 @@ function userTemplateToTemplate(u) {
 let deck = { slides: [] };
 let userTemplates = [];
 let activeSlideId = null;
+
+// ---------- Shiny persistent iframe ----------
+// The iframe must never be removed from the DOM — any removal (including
+// reparenting via insertBefore/appendChild) discards the browsing context per
+// the HTML spec. Solution: keep one iframe as a direct child of document.body
+// with position:fixed, sized/positioned to overlay the current .slide-body.
+// The Shiny session then survives slide navigation and pane changes.
+let _shinyFrame    = null;
+let _shinyFrameUrl = '';
+let _shinyFrameRaf = null; // pending rAF for position update
+
+function _ensureShinyFrame() {
+  if (_shinyFrame) return;
+  _shinyFrame = document.createElement('iframe');
+  _shinyFrame.id = 'shiny-persistent-frame';
+  _shinyFrame.setAttribute('allowfullscreen', '');
+  _shinyFrame.style.cssText = 'position:fixed;display:none;border:none;z-index:5;pointer-events:auto;';
+  document.body.appendChild(_shinyFrame);
+}
+
+// Overlay the iframe on the .slide-body of the visible stage (edit or present).
+function _shinyReposition() {
+  if (!_shinyFrame) return;
+  const presentEl = document.getElementById('present');
+  const inPresent = presentEl && !presentEl.hidden;
+  const body = inPresent
+    ? document.querySelector('#present-stage .slide-body')
+    : document.querySelector('#stage .slide-body');
+  if (!body || _shinyFrame.style.display === 'none') return;
+  const r = body.getBoundingClientRect();
+  _shinyFrame.style.left    = r.left   + 'px';
+  _shinyFrame.style.top     = r.top    + 'px';
+  _shinyFrame.style.width   = r.width  + 'px';
+  _shinyFrame.style.height  = r.height + 'px';
+  _shinyFrame.style.zIndex  = inPresent ? '201' : '5';
+}
+
+function _shinyScheduleReposition() {
+  cancelAnimationFrame(_shinyFrameRaf);
+  _shinyFrameRaf = requestAnimationFrame(_shinyReposition);
+}
+
+// Show/hide and load the Shiny frame for `slide`. Pass null to hide.
+function mountShinyFrame(slide) {
+  _ensureShinyFrame();
+  const url  = slide && slide.templateId === 'shiny' ? (slide.fields.url || '').trim() : '';
+  const pane = slide ? (slide.fields.pane || 'ALL').toLowerCase() : 'all';
+  const hasHeader = slide && String((slide.header && slide.header.text) || '').trim();
+  if (!url || !hasHeader) { _shinyFrame.style.display = 'none'; return; }
+  _shinyFrame.style.display = 'block';
+  _shinyScheduleReposition();
+  if (_shinyFrameUrl !== url) {
+    _shinyFrameUrl = url;
+    _shinyFrame.onload = () => { _shinyPaneMsg(pane); _shinyFrame.onload = null; };
+    _shinyFrame.src = url;
+  } else {
+    _shinyPaneMsg(pane);
+  }
+}
+
+function _shinyPaneMsg(pane) {
+  try { _shinyFrame.contentWindow.postMessage({ type: 'shiny-set-pane', pane }, '*'); } catch (_) {}
+}
 
 // ---------- Persistence ----------
 function loadState() {
@@ -1091,7 +1245,7 @@ function renderOverlays(slide) {
 function renderSlideHTML(slide, page, total) {
   const t = getTemplate(slide.templateId);
   const body = t
-    ? t.render(slide.fields)
+    ? t.render(slide.fields, slide)
     : `<div style="padding:24px;color:#a00">Template not found: ${esc(slide.templateId)}</div>`;
   const h = renderChrome(slide.header, page, total);
   const f = renderFooter(slide.footer, page, total);
@@ -1146,11 +1300,12 @@ function renderStage() {
   const stage = document.getElementById('stage');
   const idx = deck.slides.findIndex(s => s.id === activeSlideId);
   const slide = deck.slides[idx];
-  if (!slide) { stage.innerHTML = '<div style="padding:20px;color:#666">No slide selected.</div>'; return; }
+  if (!slide) { stage.innerHTML = '<div style="padding:20px;color:#666">No slide selected.</div>'; mountShinyFrame(null); return; }
   try {
     stage.innerHTML = renderSlideHTML(slide, idx + 1, deck.slides.length);
     patchChromeMarkdown(stage);
     renderPillarsMarkdown(stage, slide);
+    mountShinyFrame(slide);
   } catch (e) { stage.innerHTML = `<div style="padding:20px;color:#a00">Render error: ${esc(e.message)}</div>`; }
 }
 
@@ -1779,6 +1934,8 @@ function exitPresent() {
   document.getElementById('present').hidden = true;
   document.removeEventListener('keydown', onPresentKey);
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => { });
+  // Reposition frame over edit-mode stage (present overlay is now hidden)
+  _shinyScheduleReposition();
 }
 function renderPresent() {
   const stage = document.getElementById('present-stage');
@@ -1789,6 +1946,7 @@ function renderPresent() {
   patchChromeMarkdown(box);
   renderPillarsMarkdown(box, s);
   stage.appendChild(box);
+  mountShinyFrame(s);
   document.getElementById('present-count').textContent = `${presentIdx + 1} / ${deck.slides.length}`;
 }
 function onPresentKey(e) {
@@ -1966,6 +2124,12 @@ function init() {
       renderAll();
     }
   });
+
+  // Keep the fixed Shiny iframe aligned when the window resizes or the
+  // stage-wrapper scrolls (the stage can shift as the viewport changes).
+  window.addEventListener('resize', _shinyScheduleReposition);
+  document.querySelector('.stage-wrapper') &&
+    document.querySelector('.stage-wrapper').addEventListener('scroll', _shinyScheduleReposition);
 
   renderAll();
 }
