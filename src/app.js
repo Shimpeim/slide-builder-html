@@ -1926,9 +1926,13 @@ function startPresent() {
   renderPresent();
   document.getElementById('present').hidden = false;
   document.addEventListener('keydown', onPresentKey);
-  // Try full-screen; ignore if blocked.
-  const p = document.getElementById('present');
-  if (p.requestFullscreen) p.requestFullscreen().catch(() => { });
+  // Fullscreen the whole document, not just #present.
+  // If we fullscreen only #present it enters the CSS top layer, which renders
+  // above every sibling (including the persistent Shiny iframe) regardless of
+  // z-index. Fullscreening documentElement keeps normal z-index ordering so
+  // the iframe at z-index:201 sits above .present at z-index:200.
+  if (document.documentElement.requestFullscreen)
+    document.documentElement.requestFullscreen().catch(() => { });
 }
 function exitPresent() {
   document.getElementById('present').hidden = true;
