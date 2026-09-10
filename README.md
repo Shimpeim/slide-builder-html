@@ -18,12 +18,13 @@ State auto-saves to browser localStorage. Use **Save** (downloads a JSON) and **
 
 ### Templates
 
-Four built-ins, each with its own editable schema:
+Five built-ins, each with its own editable schema:
 
 - **Pillars** — 1–8 side-by-side pillars, per-pillar text / font / size / colour
 - **Title** — big title + subtitle, independent fonts
 - **Outline** — agenda list with a configurable "current section" highlight and optional strike-through for passed sections
 - **Bullets** — heading + bullet list
+- **Shiny App** — full-body iframe embedding a running Shiny app. Fields: `url` (the `http://127.0.0.1:PORT` address), optional `caption` (a short line shown below the iframe with a top border), and `pane` (`ALL` / `LEFT` / `RIGHT`). `LEFT` shows only the app's input column, `RIGHT` shows only the output column, `ALL` shows both. A header is required — the slide shows a prompt if no header is set. The Shiny session is shared across all slides that use the same URL: navigating from a LEFT slide to a RIGHT slide preserves the session (computations remain visible). The Shiny server must be running locally; this works in both edit mode and Published HTML.
 
 **User-defined templates** — via the *Templates* button. The user provides a template name, a set of typed fields (text, textarea, number, font, color, select), and an HTML template that references the fields as `{{fieldname}}` (escaped) or `{{fieldname|raw}}` (unescaped — needed for inlining values into CSS or attributes, e.g. `style="font-family: {{titleFont|raw}}"`). Custom templates are stored in localStorage alongside the deck.
 
@@ -185,6 +186,8 @@ Handled in-app via **Templates → + New user template**. No code changes needed
 - **`VIEWER_CSS` in `app.js` must stay in sync with `styles.css`.** The Publish feature embeds the full stylesheet as a string constant (`const VIEWER_CSS`) near the top of `app.js` because `fetch()` and CSSOM rule access are both blocked on `file://` origins in Chrome. Any edit to `styles.css` requires rebuilding this constant. See `CLAUDE.md` for the sync script.
 - **Footer CSS grid → flex.** The footer was changed from `display: grid` to `display: flex` because CSS Grid sizes `auto` tracks to **min-content** (the width of the longest single word) when a `fr` track is present, causing premature text wrapping. Flex with `flex: 0 1 auto` on left/right slots preserves natural content width and wraps only when the total would exceed the slide width.
 - **`function.toString()` for Publish serialisation.** Built-in template functions and rendering helpers are serialised via `.toString()` into the published HTML. Shorthand method syntax (e.g. `render(fields) {}`) does not include the `function` keyword, so a `toFnSrc()` wrapper inside `publishHTML` prepends it where missing. Don't convert these functions to arrow functions — arrow functions are fine for Publish but break the `function` prefix check.
+- **Shiny App template — persistent iframe.** The iframe is kept as a single `position:fixed` element in `document.body` and is never removed from the DOM. Removing an iframe from the DOM (even temporarily, including reparenting via `insertBefore`) discards its browsing context per the HTML spec; the fixed-overlay approach is the only way to preserve the Shiny session across slide navigation. `_shinyReposition()` updates its position to match the current `.slide-body` bounding rect after every render and on window resize. In Published HTML, `mountShinyFrame` is not defined, so `render()` falls back to embedding the iframe inline with `?pane=left/right` in the URL.
+- **Shiny App template iframe requires a running server.** The iframe loads from a live `http://127.0.0.1:PORT` URL. If the Shiny server is not running, the iframe shows a connection-refused error. No `sandbox` attribute is used because `allow-same-origin` + `allow-scripts` effectively lifts all sandbox restrictions anyway for a local origin, and its absence keeps Shiny's popup/download behaviour intact.
 
 ## Roadmap notes (not implemented)
 

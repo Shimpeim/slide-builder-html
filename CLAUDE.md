@@ -81,6 +81,52 @@ Not embedded (linked at runtime):
 - KaTeX (CDN)
 - Linked overlay images — file paths are preserved but the files are not bundled; a warning is shown post-export
 
+## Shiny App template
+
+Added 2026-08-24. Fields: `url` (string, default `http://127.0.0.1:3838`), `caption` (string, optional), `pane` (string, default `'ALL'`).
+
+`render(fields, slide)` — takes the full slide as a second argument (see `renderSlideHTML` change below).
+
+**Render logic (three states):**
+1. No header (`slide.header.text` empty) → shows "Input a HEADER to display the app." prompt. A header is required by design: it makes the slide easy to identify and navigate in Presentation mode.
+2. Header set but no URL (`fields.url` empty) → shows "Set a Shiny app URL" prompt.
+3. Header + URL set → the actual display depends on the code path (see below).
+
+**Pane selector (fixed: ALL / LEFT / RIGHT):**
+- The properties panel shows a `<select id="shiny-pane-select">` with three hardcoded choices: `ALL`, `LEFT` (input column), `RIGHT` (output column).
+- Pane state is stored in `fields.pane` and preserved in JSON export and published HTML automatically.
+- The two top-level columns in `app.R` (`column(5, id="pane-left")`, `column(7, id="pane-right")`) are the CSS targets.
+- CSS in `APP_CSS`: `body.pane-left-only #pane-right { display:none }` and the symmetric `pane-right-only` rule; both expand the visible column to 100% width.
+
+**Two rendering paths (edit/present vs published HTML):**
+
+*Edit and present mode* — persistent fixed iframe (`_shinyFrame` in `app.js`):
+- The HTML spec mandates that any removal of an iframe from the DOM (including during reparenting via `insertBefore`/`appendChild`) discards the browsing context. Therefore the iframe must never be removed.
+- One `<iframe id="shiny-persistent-frame">` is appended to `document.body` once and never removed. It uses `position:fixed` sized to the `.slide-body` bounding rect via `_shinyReposition()`.
+- `mountShinyFrame(slide)` is called after every `renderStage()` and `renderPresent()`. If the URL is unchanged, no reload — a `postMessage({type:'shiny-set-pane', pane})` is sent to toggle the Shiny CSS class. If the URL changes, `frame.src` is set (new session).
+- `render()` in edit mode returns a plain `.tpl-shiny` shell div (white background placeholder); the iframe is overlaid on top via fixed positioning.
+- Position is updated on `window.resize` and `.stage-wrapper` scroll via `requestAnimationFrame`.
+- `exitPresent()` calls `_shinyScheduleReposition()` so the frame realigns to the edit-stage `.slide-body` after the present overlay is hidden.
+- `app.R` receives pane changes via `window.addEventListener('message', ...)` listening for `{type:'shiny-set-pane', pane:'left'/'right'/'all'}` and calls `_applyPaneClass()` to add/remove `pane-left-only`/`pane-right-only` on `<body>`.
+
+*Published HTML* — inline iframe with `?pane=` URL param:
+- `mountShinyFrame` is not defined in published HTML → `render()` falls back to embedding the iframe directly inside `.tpl-shiny` with `position:absolute`.
+- When `pane !== 'ALL'`, the iframe src becomes `${url}?pane=left` or `${url}?pane=right`.
+- `app.R` server reads `parseQueryString(session$clientData$url_search)[["pane"]]` via `observe` and calls `session$sendCustomMessage("set_pane_class", ...)`. `Shiny.addCustomMessageHandler("set_pane_class", ...)` applies the body class.
+
+**`.tpl-shiny` CSS layout (published HTML / placeholder in edit mode):**
+- `.tpl-shiny`: `position:absolute; top:0; left:0; width:100%; height:100%` — fills `.slide-body` (`position:relative`). The absolute positioning gives definite dimensions without relying on `height:100%` resolving through a `1fr` grid track.
+- `.tpl-shiny-frame`: `position:absolute; top:0; left:0; width:100%; height:100%; border:none` — used only in published HTML; in edit/present mode the iframe is fixed-position in `document.body`.
+- `.tpl-shiny-caption`: `position:absolute; bottom:0` — overlays the iframe at the bottom.
+
+Failed iframe sizing attempts (edit mode, before fixed-position approach): (1) `flex:1` on iframe → stayed 150 px UA default. (2) `position:absolute; inset:0; display:flex` + iframe `flex:1` → still 150 px. (3) `height:100%; position:relative` + iframe `position:absolute` → worked with header but collapsed to 0 without one. (4) Park-and-reparent approach (move iframe to hidden div before `innerHTML`, reparent back after) → HTML spec discards the browsing context on removal even during reparenting; sessions lost on every slide change.
+
+**`renderSlideHTML` change:** `t.render(slide.fields)` → `t.render(slide.fields, slide)`. All other templates ignore the second argument. The serialised version in `publishHTML` inherits this change automatically via `renderSlideHTML.toString()`.
+
+No `sandbox` attribute — adding `allow-same-origin + allow-scripts` lifts all meaningful restrictions for a local origin, so omitting it entirely keeps Shiny's download/popup behaviour intact without false security theatre.
+
+`publishHTML` serialises the `render` function via `toFnSrc`. `esc` is in scope in the published HTML. The iframe URL (with optional `?pane=left/right`) is embedded verbatim — the Shiny server must be running locally for it to load.
+
 ## Gotchas
 
 - **`function.toString()` for serialisation.** Shorthand methods (`render(fields) {}`) omit the `function` keyword when stringified. The `toFnSrc()` helper inside `publishHTML` prepends it where missing. Don't convert these to arrow functions.
